@@ -1,0 +1,24 @@
+2026-02-25 23:28:43 [INFO] <KERNEL> Starting acl2 kernel
+2026-02-25 23:28:43 [INFO] <KERNEL> Parsing connection file /tmp/tmplja999nd.json
+2026-02-25 23:28:43 [INFO] <MAC> Starting message authentification
+2026-02-25 23:28:43 [INFO] <MAC> Using hmac with sha256 digest for message signing.
+2026-02-25 23:28:43 [INFO] <HB-CHANNEL> Starting channel on tcp://127.0.0.1:42619
+2026-02-25 23:28:43 [INFO] <IOPUB-CHANNEL> Starting channel on tcp://127.0.0.1:34255
+2026-02-25 23:28:43 [INFO] <HB-CHANNEL> Starting thread
+2026-02-25 23:28:43 [INFO] <SHELL-CHANNEL> Starting channel on tcp://127.0.0.1:41673
+2026-02-25 23:28:43 [INFO] <STDIN-CHANNEL> Starting channel on tcp://127.0.0.1:48233
+2026-02-25 23:28:43 [INFO] <CONTROL-CHANNEL> Starting channel on tcp://127.0.0.1:60745
+2026-02-25 23:28:43 [INFO] <HISTORY> Starting history
+2026-02-25 23:28:43 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-25 23:28:43 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message
+2026-02-25 23:28:44 [INFO] <KERNEL> Handling execute_request message

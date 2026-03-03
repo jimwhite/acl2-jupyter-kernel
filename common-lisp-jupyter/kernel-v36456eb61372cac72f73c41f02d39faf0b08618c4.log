@@ -1,0 +1,17 @@
+2026-02-26 06:41:04 [INFO] <KERNEL> Starting acl2 kernel
+2026-02-26 06:41:04 [INFO] <KERNEL> Parsing connection file /home/jovyan/.local/share/jupyter/runtime/kernel-v36456eb61372cac72f73c41f02d39faf0b08618c4.json
+2026-02-26 06:41:04 [INFO] <MAC> Starting message authentification
+2026-02-26 06:41:04 [INFO] <MAC> Using hmac with sha256 digest for message signing.
+2026-02-26 06:41:04 [INFO] <HB-CHANNEL> Starting channel on tcp://127.0.0.1:9020
+2026-02-26 06:41:04 [INFO] <IOPUB-CHANNEL> Starting channel on tcp://127.0.0.1:9024
+2026-02-26 06:41:04 [INFO] <HB-CHANNEL> Starting thread
+2026-02-26 06:41:04 [INFO] <SHELL-CHANNEL> Starting channel on tcp://127.0.0.1:9022
+2026-02-26 06:41:04 [INFO] <STDIN-CHANNEL> Starting channel on tcp://127.0.0.1:9023
+2026-02-26 06:41:04 [INFO] <CONTROL-CHANNEL> Starting channel on tcp://127.0.0.1:9021
+2026-02-26 06:41:04 [INFO] <HISTORY> Starting history
+2026-02-26 06:41:04 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-26 06:41:04 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-26 06:41:04 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-26 06:41:04 [INFO] <KERNEL> Handling kernel_info_request message
+2026-02-26 06:44:04 [INFO] <KERNEL> Stopping acl2 kernel
+2026-02-26 06:44:04 [INFO] <HB-CHANNEL> Stopping thread
