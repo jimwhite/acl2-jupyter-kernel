@@ -16,7 +16,7 @@ set -e
 
 ACL2_HOME="${ACL2_HOME:-/home/acl2}"
 QUICKLISP_SETUP="${QUICKLISP_SETUP:-${HOME}/quicklisp/setup.lisp}"
-SAVED_ACL2="${SAVED_ACL2:-${ACL2_HOME}/saved_acl2}"
+SAVED_ACL2="${ACL2:-${ACL2_HOME}/saved_acl2}"
 LOCAL_PROJECTS="${HOME}/quicklisp/local-projects"
 
 # Resolve the directory where this script lives (= where the .asd is)
