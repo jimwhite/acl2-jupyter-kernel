@@ -434,7 +434,7 @@
           (when eofp (return))
           (let ((form raw-form))
             ;; Extra-world: extract symbols from the read form
-            (when (exworld-p k)
+            (when (and k (exworld-p k))
               (accumulate-form-symbols k form (w state))
               (push form (cell-source-forms k)))
             (initialize-accumulated-warnings)
@@ -489,7 +489,7 @@
                          (list 'acl2::in-package raw-form))
                         (t raw-form))))
             ;; Extra-world: extract symbols and capture pre-eval snapshot
-            (when (exworld-p k)
+            (when (and k (exworld-p k))
               (let ((form-syms (accumulate-form-symbols k form (w state))))
                 (declare (ignore form-syms))
                 ;; Stash source form for source-based dependency extraction
@@ -939,7 +939,13 @@
   "Common state setup for both normal and boot-strap kernel modes."
   (f-put-global 'acl2::acl2-raw-mode-p nil state)
   (f-put-global 'acl2::ld-error-action :continue state)
-  (sb-ext:disable-debugger)
+  ;; Install ACL2's debugger hook.  LP (interface-raw.lisp line 10746) sets
+  ;; *debugger-hook* to 'our-abort, which converts CL conditions (error,
+  ;; type-error, etc.) into (throw 'local-top-level :our-abort) for the LD
+  ;; loop to catch.  Without this, raw CL errors (e.g. SBCL defconstant
+  ;; conflicts during include-raw) propagate uncaught and eventually reach
+  ;; interface-er → (error "ACL2 Halted").
+  (setq *debugger-hook* 'acl2::our-abort)
   (eval '(acl2::set-slow-alist-action nil))
   (f-put-global 'acl2::slow-array-action nil state)
   ;; define-our-sbcl-putenv is normally called inside LP (interface-raw.lisp

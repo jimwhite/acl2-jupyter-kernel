@@ -24,13 +24,29 @@
 ;;; Kernel-style eval with output capture
 ;;; ---------------------------------------------------------------------------
 (defun kernel-eval-with-output (form)
-  "Eval with the kernel's with-acl2-output-to + acl2-eval, returning
-   (values result-list output-string)."
+  "Eval with the kernel's with-acl2-output-to + trans-eval, returning
+   (values result-list output-string).
+   This exercises the same path as jupyter-read-eval-print-loop but
+   without needing a kernel instance or Jupyter wire protocol."
   (let ((out (make-string-output-stream)))
     (let ((results
            (acl2-jupyter-kernel::with-acl2-output-to out
              (handler-case
-                 (acl2-jupyter-kernel::acl2-eval form)
+                 (multiple-value-bind (erp trans-ans state)
+                     (trans-eval-default-warning
+                      form 'acl2-jupyter *the-live-state* t)
+                   (declare (ignore state))
+                   (if erp
+                       (list :error "trans-eval error")
+                       (let* ((stobjs-out (car trans-ans))
+                              (replaced-val (cdr trans-ans)))
+                         (if (equal stobjs-out *error-triple-sig*)
+                             (let ((erp-flag (car replaced-val))
+                                   (val (cadr replaced-val)))
+                               (if erp-flag
+                                   (list :error "erp-flag set")
+                                   (list val)))
+                             (list replaced-val)))))
                (serious-condition (c)
                  (list :error (format nil "~A" c)))))))
       (values results (get-output-stream-string out)))))

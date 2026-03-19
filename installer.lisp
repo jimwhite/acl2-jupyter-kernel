@@ -38,6 +38,14 @@
       (error "Cannot find ACL2 core at ~A" core))
     (namestring core)))
 
+(defun find-acl2-ql-bundle-dir ()
+  "Return the path to ACL2's books/quicklisp/bundle/software/ directory, or NIL."
+  (let* ((acl2-home (uiop:ensure-directory-pathname
+                     (or (uiop:getenv "ACL2_HOME") "/home/acl2")))
+         (bundle-sw (merge-pathnames "books/quicklisp/bundle/software/" acl2-home)))
+    (when (probe-file bundle-sw)
+      (namestring bundle-sw))))
+
 (defun find-quicklisp-setup ()
   "Return the path to quicklisp/setup.lisp."
   (let ((setup (merge-pathnames "quicklisp/setup.lisp"
@@ -92,24 +100,34 @@
          (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
          (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
          (exworld     (equal (or (uiop:getenv "ACL2_JUPYTER_EXWORLD") "0") "1"))
+         (bundle-sw   (find-acl2-ql-bundle-dir))
          (start-form
            (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A :exworld ~A)"
                    "{connection_file}"
                    (if event-forms "t" "nil")
                    (if full-world  "t" "nil")
                    (if deep-events "t" "nil")
-                   (if exworld     "t" "nil"))))
-    (list lisp-runtime
-          "--tls-limit" "16384"
-          "--dynamic-space-size" "32000"
-          "--control-stack-size" "64"
-          "--disable-ldb"
-          "--core" core-path
-          "--end-runtime-options"
-          "--no-userinit"
-          "--load" quicklisp-setup
-          "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
-          "--eval" start-form)))
+                   (if exworld     "t" "nil")))
+         ;; Pre-load babel from ACL2 books' quicklisp bundle to avoid
+         ;; defconstant-uneql when ACL2 books later reload their version.
+         (babel-preload
+           (when bundle-sw
+             (format nil "(let ((d (car (directory ~S)))) (when d (push d asdf:*central-registry*) (asdf:load-system \"babel\")))"
+                     (concatenate 'string bundle-sw "babel-*/")))))
+    (append
+      (list lisp-runtime
+            "--tls-limit" "16384"
+            "--dynamic-space-size" "32000"
+            "--control-stack-size" "64"
+            "--disable-ldb"
+            "--core" core-path
+            "--end-runtime-options"
+            "--no-userinit"
+            "--load" quicklisp-setup)
+      (when babel-preload
+        (list "--eval" babel-preload))
+      (list "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
+            "--eval" start-form))))
 
 (defmethod jupyter:command-line ((instance acl2-installer))
   "Get the command line for an ACL2 kernel installation."

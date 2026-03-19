@@ -68,7 +68,7 @@
         (with-acl2-output-to output
           (let ((channel (make-string-input-channel source)))
             (unwind-protect
-                (bootstrap-read-eval-print-loop channel *the-live-state*)
+                (bootstrap-read-eval-print-loop nil channel *the-live-state*)
               (close-string-input-channel channel))))
       ;; Catch execute-result errors from missing kernel
       (serious-condition (c)
@@ -102,7 +102,7 @@
           (with-acl2-output-to output
             (let ((channel (make-string-input-channel source)))
               (unwind-protect
-                  (bootstrap-read-eval-print-loop channel *the-live-state*)
+                  (bootstrap-read-eval-print-loop nil channel *the-live-state*)
                 (close-string-input-channel channel))))
         (serious-condition (c)
           (declare (ignore c)))))
