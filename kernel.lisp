@@ -67,6 +67,12 @@
    raw CL-level side effects (fboundp/boundp changes).  Set from
    ACL2_JUPYTER_EXWORLD env var in start.")
 
+(defvar *channel-counter* 0
+  "Monotonic counter for generating unique ACL2 channel symbol names.
+   Channel symbols must be interned in ACL2's dedicated packages
+   (ACL2-OUTPUT-CHANNEL / ACL2-INPUT-CHANNEL) to pass validation
+   in trans-eval.  See make-output-channel in axioms.lisp.")
+
 (defvar *main-thread-lock* (bordeaux-threads:make-lock "acl2-jupyter-main-thread-lock"))
 (defvar *main-thread-work* nil)
 (defvar *main-thread-ready* (bt-semaphore:make-semaphore))
@@ -179,9 +185,20 @@
      (progn ,@forms)))
 
 (defmacro with-acl2-output-to (stream &body forms)
-  "Redirect all ACL2 output channels AND CL streams to STREAM."
+  "Redirect all ACL2 output channels AND CL streams to STREAM.
+   Channel symbols are interned in ACL2-OUTPUT-CHANNEL (same as
+   ACL2's make-output-channel) so they pass trans-eval validation.
+
+   IMPORTANT: state-global-let* uses acl2-unwind-protect (NOT raw CL
+   unwind-protect) to save/restore state globals like proofs-co.  If a
+   hard-error throws to 'local-top-level, those cleanup closures are
+   left on *acl2-unwind-protect-stack* without executing.  The closures
+   capture our channel symbol and later try to set-proofs-co with it.
+   We must flush them (via acl2-unwind) while the channel is still
+   valid AND inside the progv scope, before remprop invalidates it."
   (let ((channel (gensym "CHANNEL")))
-    `(let* ((,channel (gensym "ACL2-JUPYTER-OUT")))
+    `(let* ((,channel (intern (format nil "JUPYTER-OUT-~D" (incf *channel-counter*))
+                              "ACL2-OUTPUT-CHANNEL")))
        (setf (get ,channel *open-output-channel-type-key*) :character)
        (setf (get ,channel *open-output-channel-key*) ,stream)
        (unwind-protect
@@ -190,9 +207,19 @@
                  (*debug-io*        (make-two-way-stream *standard-input* ,stream))
                  (*error-output*    ,stream)
                  (*standard-co*     ,channel))
-             (with-acl2-channels-bound ,channel ,@forms))
-         (setf (get ,channel *open-output-channel-key*) nil)
-         (setf (get ,channel *open-output-channel-type-key*) nil)))))
+             (with-acl2-channels-bound ,channel
+               (unwind-protect
+                   (progn ,@forms)
+                 ;; Flush stale acl2-unwind-protect closures (from
+                 ;; state-global-let* inside include-book, wof, etc.)
+                 ;; while the progv binding and channel properties are
+                 ;; still active.  Without this, those closures fire
+                 ;; during the next cell's acl2-unwind call, after
+                 ;; remprop has invalidated the channel, causing
+                 ;; "illegal value for PROOFS-CO".
+                 (acl2::acl2-unwind acl2::*ld-level* t))))
+         (remprop ,channel *open-output-channel-key*)
+         (remprop ,channel *open-output-channel-type-key*)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Class
@@ -282,8 +309,10 @@
 (defun make-string-input-channel (string)
   "Create an ACL2 :object input channel reading from STRING.
    Returns the channel symbol.  Caller must call close-string-input-channel
-   when done."
-  (let ((channel (gensym "JUPYTER-INPUT")))
+   when done.  Channel symbols are interned in ACL2-INPUT-CHANNEL (same as
+   ACL2's make-input-channel) so they pass trans-eval validation."
+  (let ((channel (intern (format nil "JUPYTER-IN-~D" (incf *channel-counter*))
+                         "ACL2-INPUT-CHANNEL")))
     (setf (get channel *open-input-channel-type-key*) :object)
     (setf (get channel *open-input-channel-key*)
           (make-string-input-stream string))
@@ -293,8 +322,8 @@
   "Close a channel created by make-string-input-channel."
   (let ((stream (get channel *open-input-channel-key*)))
     (when stream (close stream)))
-  (setf (get channel *open-input-channel-key*) nil)
-  (setf (get channel *open-input-channel-type-key*) nil))
+  (remprop channel *open-input-channel-key*)
+  (remprop channel *open-input-channel-type-key*))
 
 
 ;;; ---------------------------------------------------------------------------
@@ -906,6 +935,10 @@
   (sb-ext:disable-debugger)
   (eval '(acl2::set-slow-alist-action nil))
   (f-put-global 'acl2::slow-array-action nil state)
+  ;; define-our-sbcl-putenv is normally called inside LP (interface-raw.lisp
+  ;; line 10779) which the kernel bypasses.  Without it, setenv$ signals a
+  ;; hard error ("not available for this host Common Lisp").
+  #+sbcl (acl2::define-our-sbcl-putenv)
   (setq *kernel-shutdown* nil))
 
 (defun run-kernel-with-lp-context (conn thread-name state)
