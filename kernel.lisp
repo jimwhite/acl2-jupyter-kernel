@@ -189,13 +189,14 @@
    Channel symbols are interned in ACL2-OUTPUT-CHANNEL (same as
    ACL2's make-output-channel) so they pass trans-eval validation.
 
-   IMPORTANT: state-global-let* uses acl2-unwind-protect (NOT raw CL
-   unwind-protect) to save/restore state globals like proofs-co.  If a
-   hard-error throws to 'local-top-level, those cleanup closures are
-   left on *acl2-unwind-protect-stack* without executing.  The closures
-   capture our channel symbol and later try to set-proofs-co with it.
-   We must flush them (via acl2-unwind) while the channel is still
-   valid AND inside the progv scope, before remprop invalidates it."
+   NOTE: state-global-let* uses acl2-unwind-protect (NOT raw CL
+   unwind-protect) to save/restore state globals like proofs-co.
+   If a hard-error throws to 'local-top-level, cleanup closures are
+   left on *acl2-unwind-protect-stack*.  These must be flushed via
+   acl2-unwind INSIDE the progv scope (while the channel is still
+   valid).  The REPL loops handle this by placing catch
+   'local-top-level per-form inside the loop, so acl2-unwind at
+   the top of each iteration always fires within the progv scope."
   (let ((channel (gensym "CHANNEL")))
     `(let* ((,channel (intern (format nil "JUPYTER-OUT-~D" (incf *channel-counter*))
                               "ACL2-OUTPUT-CHANNEL")))
@@ -207,17 +208,7 @@
                  (*debug-io*        (make-two-way-stream *standard-input* ,stream))
                  (*error-output*    ,stream)
                  (*standard-co*     ,channel))
-             (with-acl2-channels-bound ,channel
-               (unwind-protect
-                   (progn ,@forms)
-                 ;; Flush stale acl2-unwind-protect closures (from
-                 ;; state-global-let* inside include-book, wof, etc.)
-                 ;; while the progv binding and channel properties are
-                 ;; still active.  Without this, those closures fire
-                 ;; during the next cell's acl2-unwind call, after
-                 ;; remprop has invalidated the channel, causing
-                 ;; "illegal value for PROOFS-CO".
-                 (acl2::acl2-unwind acl2::*ld-level* t))))
+             (with-acl2-channels-bound ,channel ,@forms))
          (remprop ,channel *open-output-channel-key*)
          (remprop ,channel *open-output-channel-type-key*)))))
 
@@ -424,11 +415,20 @@
   "Read forms from CHANNEL, evaluate each via trans-eval.
    Simplified for boot-strap mode: no keyword expansion, no command
    landmarks.  Output routing is handled by the caller.
-   K is the kernel instance for accumulating extra-world metadata."
+   K is the kernel instance for accumulating extra-world metadata.
+
+   catch 'local-top-level is PER-FORM (inside the loop) so that
+   acl2-unwind at the top of each iteration always fires while
+   progv channel bindings are still active.  If the catch were
+   outside the loop, a throw would exit both the catch and the
+   loop, leaving stale acl2-unwind-protect closures that reference
+   this cell's channel symbol -- they would fire in the NEXT cell
+   after remprop has invalidated the channel, causing the
+   'illegal value for PROOFS-CO' error."
   (let ((*readtable* acl2::*acl2-readtable*))
-    (catch 'acl2::local-top-level
-      (loop
-        (acl2::acl2-unwind acl2::*ld-level* t)
+    (loop
+      (acl2::acl2-unwind acl2::*ld-level* t)
+      (catch 'acl2::local-top-level
         (multiple-value-bind (eofp raw-form state)
             (acl2::read-object channel state)
           (when eofp (return))
@@ -460,15 +460,22 @@
 (defun jupyter-read-eval-print-loop (k channel state)
   "Read forms from CHANNEL, evaluate each via trans-eval, send results
    to Jupyter.  Runs inside the persistent LP context set up by start.
-   catch 'local-top-level is per-cell so a throw aborts the rest of
-   the cell but not the kernel.
+
+   catch 'local-top-level is PER-FORM (inside the loop) so that
+   acl2-unwind at the top of each iteration always fires while
+   progv channel bindings are still active.  If the catch were
+   outside the loop, a throw would exit both the catch and the
+   loop, leaving stale acl2-unwind-protect closures that reference
+   this cell's channel symbol -- they would fire in the NEXT cell
+   after remprop has invalidated the channel, causing the
+   'illegal value for PROOFS-CO' error.
    K is the kernel instance for accumulating extra-world metadata."
   (let ((*readtable* acl2::*acl2-readtable*))
-    (catch 'acl2::local-top-level
-      (loop
-        ;; Clean up any pending acl2-unwind-protect forms from previous
-        ;; command, same as ld-loop does at the top of each iteration.
-        (acl2::acl2-unwind acl2::*ld-level* t)
+    (loop
+      ;; Clean up any pending acl2-unwind-protect forms from previous
+      ;; command, same as ld-loop does at the top of each iteration.
+      (acl2::acl2-unwind acl2::*ld-level* t)
+      (catch 'acl2::local-top-level
         (multiple-value-bind (eofp raw-form state)
             (acl2::read-object channel state)
           (when eofp (return))
