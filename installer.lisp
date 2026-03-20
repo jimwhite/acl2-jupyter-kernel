@@ -108,12 +108,14 @@
                    (if full-world  "t" "nil")
                    (if deep-events "t" "nil")
                    (if exworld     "t" "nil")))
-         ;; Pre-load babel from ACL2 books' quicklisp bundle to avoid
-         ;; defconstant-uneql when ACL2 books later reload their version.
-         (babel-preload
+         ;; Register ALL ACL2 bundle software directories with ASDF so that
+         ;; overlapping packages (babel, alexandria, cffi, bordeaux-threads,
+         ;; etc.) use the same versions as ACL2.  This prevents
+         ;; defconstant-uneql and other version-mismatch errors.
+         (bundle-preload
            (when bundle-sw
-             (format nil "(let ((d (car (directory ~S)))) (when d (push d asdf:*central-registry*) (asdf:load-system \"babel\")))"
-                     (concatenate 'string bundle-sw "babel-*/")))))
+             (format nil "(dolist (d (directory ~S)) (push d asdf:*central-registry*))"
+                     (concatenate 'string bundle-sw "*/")))))
     (append
       (list lisp-runtime
             "--tls-limit" "16384"
@@ -124,8 +126,8 @@
             "--end-runtime-options"
             "--no-userinit"
             "--load" quicklisp-setup)
-      (when babel-preload
-        (list "--eval" babel-preload))
+      (when bundle-preload
+        (list "--eval" bundle-preload))
       (list "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
             "--eval" start-form))))
 
