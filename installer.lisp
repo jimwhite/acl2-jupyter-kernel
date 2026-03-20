@@ -38,14 +38,6 @@
       (error "Cannot find ACL2 core at ~A" core))
     (namestring core)))
 
-(defun find-acl2-ql-bundle-dir ()
-  "Return the path to ACL2's books/quicklisp/bundle/software/ directory, or NIL."
-  (let* ((acl2-home (uiop:ensure-directory-pathname
-                     (or (uiop:getenv "ACL2_HOME") "/home/acl2")))
-         (bundle-sw (merge-pathnames "books/quicklisp/bundle/software/" acl2-home)))
-    (when (probe-file bundle-sw)
-      (namestring bundle-sw))))
-
 (defun find-quicklisp-setup ()
   "Return the path to quicklisp/setup.lisp."
   (let ((setup (merge-pathnames "quicklisp/setup.lisp"
@@ -100,36 +92,27 @@
          (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
          (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
          (exworld     (equal (or (uiop:getenv "ACL2_JUPYTER_EXWORLD") "0") "1"))
-         (bundle-sw   (find-acl2-ql-bundle-dir))
          (start-form
            (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A :exworld ~A)"
                    "{connection_file}"
                    (if event-forms "t" "nil")
                    (if full-world  "t" "nil")
                    (if deep-events "t" "nil")
-                   (if exworld     "t" "nil")))
-         ;; Register ALL ACL2 bundle software directories with ASDF so that
-         ;; overlapping packages (babel, alexandria, cffi, bordeaux-threads,
-         ;; etc.) use the same versions as ACL2.  This prevents
-         ;; defconstant-uneql and other version-mismatch errors.
-         (bundle-preload
-           (when bundle-sw
-             (format nil "(dolist (d (directory ~S)) (push d asdf:*central-registry*))"
-                     (concatenate 'string bundle-sw "*/")))))
-    (append
-      (list lisp-runtime
-            "--tls-limit" "16384"
-            "--dynamic-space-size" "32000"
-            "--control-stack-size" "64"
-            "--disable-ldb"
-            "--core" core-path
-            "--end-runtime-options"
-            "--no-userinit"
-            "--load" quicklisp-setup)
-      (when bundle-preload
-        (list "--eval" bundle-preload))
-      (list "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
-            "--eval" start-form))))
+                   (if exworld     "t" "nil"))))
+    (list lisp-runtime
+          "--tls-limit" "16384"
+          "--dynamic-space-size" "32000"
+          "--control-stack-size" "64"
+          "--disable-ldb"
+          "--core" core-path
+          "--end-runtime-options"
+          "--no-userinit"
+          ;; Clear stale ASDF source-registry cached in the saved ACL2 image
+          ;; so it picks up the current source-registry.conf.d at runtime.
+          "--eval" "(asdf:clear-source-registry)"
+          "--load" quicklisp-setup
+          "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
+          "--eval" start-form)))
 
 (defmethod jupyter:command-line ((instance acl2-installer))
   "Get the command line for an ACL2 kernel installation."
