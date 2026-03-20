@@ -39,17 +39,29 @@ fi
 if [ "${NEEDS_COPY}" = "1" ]; then
     echo "Copying acl2-jupyter-kernel into ${LOCAL_PROJECTS}/"
     mkdir -p "${TARGET}"
-    cp -a "${SCRIPT_DIR}"/*.lisp "${SCRIPT_DIR}"/*.asd "${TARGET}/"
+    # This can fail in devcontainer/CI images if `LOCAL_PROJECTS` is root-owned.
+    # The kernelspec install below can still work if Quicklisp can already load
+    # `:acl2-jupyter-kernel` from an existing (possibly stale) local-project.
+    cp -a "${SCRIPT_DIR}"/*.lisp "${SCRIPT_DIR}"/*.asd "${TARGET}/" || {
+        echo "WARNING: Could not update ${TARGET} (permission denied?). Continuing anyway."
+    }
 fi
 
-# Also install the VSCode extension if it's alongside us and not yet installed
-EXTENSION_SRC="${SCRIPT_DIR}/../extension/acl2-language"
-EXTENSION_DST="${HOME}/.vscode-server/extensions/acl2-jupyter.acl2-language-0.1.0"
-if [ -d "${EXTENSION_SRC}" ] && [ ! -e "${EXTENSION_DST}/package.json" ]; then
-    echo "Copying VSCode extension into ${EXTENSION_DST}"
-    mkdir -p "${EXTENSION_DST}"
-    cp -a "${EXTENSION_SRC}"/* "${EXTENSION_DST}/"
-fi
+# Also install the editor extension if it's alongside us and not yet installed.
+# Support both VSCode remote server and Cursor remote server layouts.
+#
+# In this repo, the extension sources live under:
+#   external/acl2-jupyter/context/extension/acl2-language
+EXTENSION_SRC="${SCRIPT_DIR}/../acl2-jupyter/context/extension/acl2-language"
+EXTENSION_ID="acl2-jupyter.acl2-language-0.1.0"
+for EXTENSIONS_ROOT in "${HOME}/.vscode-server/extensions" "${HOME}/.cursor-server/extensions"; do
+    EXTENSION_DST="${EXTENSIONS_ROOT}/${EXTENSION_ID}"
+    if [ -d "${EXTENSION_SRC}" ] && [ ! -e "${EXTENSION_DST}/package.json" ]; then
+        echo "Copying editor extension into ${EXTENSION_DST}"
+        mkdir -p "${EXTENSION_DST}"
+        cp -a "${EXTENSION_SRC}/." "${EXTENSION_DST}/"
+    fi
+done
 
 # Kernel start options — set explicitly rather than relying on defaults.
 # These become flags in kernel.json's argv start form.
