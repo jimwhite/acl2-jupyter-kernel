@@ -81,8 +81,8 @@ echo ""
 "${SAVED_ACL2}" <<EOF
 (value :q)
 (sb-ext:disable-debugger)
-(asdf:clear-source-registry)
 (load "${QUICKLISP_SETUP}")
+(asdf:clear-source-registry)
 (ql:quickload :acl2-jupyter-kernel :silent t)
 (acl2-jupyter-kernel:install)
 (sb-ext:exit)
