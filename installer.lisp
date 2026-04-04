@@ -107,10 +107,11 @@
           "--core" core-path
           "--end-runtime-options"
           "--no-userinit"
-          ;; Clear stale ASDF source-registry cached in the saved ACL2 image
-          ;; so it picks up the current source-registry.conf.d at runtime.
-          "--eval" "(asdf:clear-source-registry)"
+          ;; Quicklisp setup.lisp loads ASDF, then we clear the stale
+          ;; source-registry cached in the saved ACL2 image so it
+          ;; picks up the current source-registry.conf.d at runtime.
           "--load" quicklisp-setup
+          "--eval" "(asdf:clear-source-registry)"
           "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
           "--eval" start-form)))
 
