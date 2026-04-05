@@ -17,6 +17,16 @@ ACL2_HOME="${ACL2_HOME:-/home/acl2}"
 QUICKLISP_SETUP="${QUICKLISP_SETUP:-${HOME}/quicklisp/setup.lisp}"
 ACL2_QL_BUNDLE="${ACL2_HOME}/books/quicklisp/bundle/software"
 
+# Locate the ACL2 core — saved_acl2r.core (ACL2(r)) or saved_acl2.core
+if [ -f "${ACL2_HOME}/saved_acl2r.core" ]; then
+    ACL2_CORE="${ACL2_HOME}/saved_acl2r.core"
+elif [ -f "${ACL2_HOME}/saved_acl2.core" ]; then
+    ACL2_CORE="${ACL2_HOME}/saved_acl2.core"
+else
+    echo "ERROR: Cannot find saved_acl2.core or saved_acl2r.core in ${ACL2_HOME}" >&2
+    exit 1
+fi
+
 export SBCL_HOME="${SBCL_HOME:-/usr/local/lib/sbcl/}"
 
 # Pre-load babel from the ACL2 books' quicklisp bundle so the kernel
@@ -26,7 +36,7 @@ export SBCL_HOME="${SBCL_HOME:-/usr/local/lib/sbcl/}"
 # their bundle via include-raw.
 exec /usr/local/bin/sbcl \
     --tls-limit 16384 --dynamic-space-size 32000 --control-stack-size 64 --disable-ldb \
-    --core "${ACL2_HOME}/saved_acl2.core" \
+    --core "${ACL2_CORE}" \
     --end-runtime-options \
     --no-userinit \
     --load "${QUICKLISP_SETUP}" \

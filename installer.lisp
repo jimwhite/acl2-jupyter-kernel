@@ -30,13 +30,31 @@
      (uiop:run-program (list "which" impl) :output :string))))
 
 (defun find-acl2-core ()
-  "Return the path to the ACL2 core/image file."
-  (let* ((acl2-home (uiop:ensure-directory-pathname
-                     (or (uiop:getenv "ACL2_HOME") "/home/acl2")))
-         (core (merge-pathnames "saved_acl2.core" acl2-home)))
-    (unless (probe-file core)
-      (error "Cannot find ACL2 core at ~A" core))
-    (namestring core)))
+  "Return the path to the ACL2 core/image file.
+   Reads the saved_acl2 script (via $ACL2 or default) and extracts
+   the --core argument value."
+  (let* ((acl2-script (or (uiop:getenv "ACL2")
+                          (namestring
+                           (merge-pathnames "saved_acl2"
+                                            (uiop:ensure-directory-pathname
+                                             (or (uiop:getenv "ACL2_HOME") "/home/acl2"))))))
+         (script-text (uiop:read-file-string acl2-script))
+         (pos (search "--core " script-text))
+         (core (when pos
+                 (let* ((start (+ pos 7))
+                        ;; Strip optional leading quote
+                        (start (if (and (< start (length script-text))
+                                        (char= (char script-text start) #\"))
+                                   (1+ start) start))
+                        (end (position-if (lambda (c)
+                                            (or (char= c #\Space)
+                                                (char= c #\")
+                                                (char= c #\Newline)))
+                                          script-text :start start)))
+                   (subseq script-text start (or end (length script-text)))))))
+    (unless (and core (probe-file core))
+      (error "Cannot find ACL2 core from script ~A" acl2-script))
+    (namestring (probe-file core))))
 
 (defun find-quicklisp-setup ()
   "Return the path to quicklisp/setup.lisp."
