@@ -130,6 +130,11 @@
           ;; picks up the current source-registry.conf.d at runtime.
           "--load" quicklisp-setup
           "--eval" "(asdf:clear-source-registry)"
+          ;; Pre-load babel from the ACL2 books' quicklisp bundle so the
+          ;; kernel and ACL2 books use the same version (prevents
+          ;; defconstant-uneql when books load babel via include-raw).
+          "--eval" (format nil "(let ((d (car (directory \"~A/books/quicklisp/bundle/software/babel-*/\")))) (when d (push d asdf:*central-registry*) (asdf:load-system \"babel\")))"
+                           (or (uiop:getenv "ACL2_HOME") "/home/acl2"))
           "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
           "--eval" start-form)))
 

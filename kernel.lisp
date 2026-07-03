@@ -983,6 +983,12 @@
    DEEP-EVENTS: when T, include embedded sub-events with full tuples.
    EXWORLD: when T, include extra-world metadata (symbols, deps, expansions)."
   (acl2::acl2-default-restart)
+  ;; Fix: ironclad (loaded by common-lisp-jupyter) registers with package
+  ;; nickname "CRYPTO", which conflicts with ACL2's kestrel/crypto/portcullis
+  ;; defpkg.  Strip the nickname before ACL2 LP starts.
+  (when (find-package "IRONCLAD")
+    (rename-package "IRONCLAD" "IRONCLAD"
+      (remove "CRYPTO" (package-nicknames "IRONCLAD") :test #'string=)))
   ;; LP first-entry initialization (normally done by lp on first call).
   (let ((state *the-live-state*))
     (when (not acl2::*lp-ever-entered-p*)
