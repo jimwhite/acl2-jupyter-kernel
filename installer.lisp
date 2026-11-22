@@ -15,46 +15,113 @@
 ;;; Constants
 ;;; ---------------------------------------------------------------------------
 
-(defvar +display-name+ "ACL2")
+(defvar +display-name+
+  (or (uiop:getenv "ACL2_JUPYTER_DISPLAY_NAME") "ACL2"))
 (defvar +language+ "acl2")
+(defvar +kernel-name+
+  (or (uiop:getenv "ACL2_JUPYTER_KERNEL_NAME") "acl2"))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Path Discovery  (implementation-neutral, uses UIOP)
 ;;; ---------------------------------------------------------------------------
 
+(defun acl2-script-path ()
+  "Return the path to the saved_acl2 launcher script."
+  (or (uiop:getenv "ACL2")
+      (namestring
+       (merge-pathnames "saved_acl2"
+                        (uiop:ensure-directory-pathname
+                         (or (uiop:getenv "ACL2_HOME") "/home/acl2"))))))
+
+(defun shell-split (line)
+  "Split LINE into shell-like words, honoring single and double quotes."
+  (let ((words nil)
+        (current (make-string-output-stream))
+        (quote nil)
+        (in-word nil))
+    (flet ((finish-word ()
+             (when in-word
+               (push (get-output-stream-string current) words)
+               (setf current (make-string-output-stream)
+                     in-word nil))))
+      (loop for ch across line
+            do (cond
+                 ((and quote (char= ch quote))
+                  (setf quote nil
+                        in-word t))
+                 (quote
+                  (write-char ch current))
+                 ((or (char= ch #\") (char= ch #\'))
+                  (setf quote ch
+                        in-word t))
+                 ((member ch '(#\Space #\Tab))
+                  (finish-word))
+                 (t
+                  (write-char ch current)
+                  (setf in-word t))))
+      (finish-word))
+    (nreverse words)))
+
+(defun acl2-script-exec-line ()
+  "Return the words of the first `exec' line in the saved_acl2 script.
+   Returns NIL when the script cannot be read or has no exec line."
+  (handler-case
+      (with-open-file (stream (acl2-script-path))
+        (loop for line = (read-line stream nil nil)
+              while line
+              when (and (>= (length line) 4)
+                        (string= (subseq line 0 4) "exec"))
+                return (shell-split (subseq line 4))))
+    (error () nil)))
+
+(defun option-value (args option)
+  "Return the value following OPTION in ARGS, also accepting OPTION=value."
+  (loop for tail on args
+        for arg = (car tail)
+        when (string= arg option)
+          return (cadr tail)
+        when (and (> (length arg) (length option))
+                  (char= (char arg (length option)) #\=)
+                  (string= option arg :end2 (length option)))
+          return (subseq arg (1+ (length option)))))
+
 (defun find-lisp-runtime ()
-  "Return the absolute path to the current Lisp implementation's executable."
-  (let ((impl (string-downcase (symbol-name (uiop:implementation-type)))))
-    (string-right-trim
-     '(#\Newline #\Space #\Return)
-     (uiop:run-program (list "which" impl) :output :string))))
+  "Return the absolute path to the Lisp executable used by saved_acl2.
+   Falls back to searching for the current implementation on PATH."
+  (or (let* ((args (acl2-script-exec-line))
+             (exe (first args)))
+        (when (and exe (probe-file exe))
+          (namestring (probe-file exe))))
+      (let ((impl (string-downcase (symbol-name (uiop:implementation-type)))))
+        (string-right-trim
+         '(#\Newline #\Space #\Return)
+         (uiop:run-program (list "which" impl) :output :string)))))
 
 (defun find-acl2-core ()
-  "Return the path to the ACL2 core/image file.
-   Reads the saved_acl2 script (via $ACL2 or default) and extracts
-   the --core argument value."
-  (let* ((acl2-script (or (uiop:getenv "ACL2")
-                          (namestring
-                           (merge-pathnames "saved_acl2"
-                                            (uiop:ensure-directory-pathname
-                                             (or (uiop:getenv "ACL2_HOME") "/home/acl2"))))))
-         (script-text (uiop:read-file-string acl2-script))
-         (pos (search "--core " script-text))
-         (core (when pos
-                 (let* ((start (+ pos 7))
-                        ;; Strip optional leading quote
-                        (start (if (and (< start (length script-text))
-                                        (char= (char script-text start) #\"))
-                                   (1+ start) start))
-                        (end (position-if (lambda (c)
-                                            (or (char= c #\Space)
-                                                (char= c #\")
-                                                (char= c #\Newline)))
-                                          script-text :start start)))
-                   (subseq script-text start (or end (length script-text)))))))
+  "Return the path to the ACL2 core/image used by saved_acl2.
+   SBCL scripts pass it with --core; CCL scripts pass it with -I / --image-name."
+  (let* ((args (acl2-script-exec-line))
+         (core (or (option-value args "--core")
+                   (option-value args "-I")
+                   (option-value args "--image-name"))))
     (unless (and core (probe-file core))
-      (error "Cannot find ACL2 core from script ~A" acl2-script))
+      (error "Cannot find ACL2 core from script ~A" (acl2-script-path)))
     (namestring (probe-file core))))
+
+(defun ccl-runtime-args ()
+  "Return the CCL runtime arguments from the saved_acl2 script.
+   Drops the executable, the -I image argument (added separately), the
+   -e (acl2-default-restart) form (the kernel performs startup itself),
+   and the trailing \"$@\"."
+  (let ((skip-next nil))
+    (loop for arg in (rest (acl2-script-exec-line))
+          if skip-next
+            do (setf skip-next nil)
+          else if (member arg '("-I" "--image-name" "-e" "--eval")
+                         :test #'string=)
+            do (setf skip-next t)
+          else unless (string= arg "$@")
+            collect arg)))
 
 (defun find-quicklisp-setup ()
   "Return the path to quicklisp/setup.lisp."
@@ -104,39 +171,62 @@
   (:documentation "Build the argv list for kernel.json, dispatched on IMPL
    (a keyword like :SBCL or :CCL)."))
 
+(defun kernel-start-form ()
+  "Build the (acl2-jupyter-kernel:start ...) form with the configured flags."
+  (let ((full-world  (equal (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0") "1"))
+        (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
+        (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
+        (exworld     (equal (or (uiop:getenv "ACL2_JUPYTER_EXWORLD") "0") "1")))
+    (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A :exworld ~A)"
+            "{connection_file}"
+            (if event-forms "t" "nil")
+            (if full-world  "t" "nil")
+            (if deep-events "t" "nil")
+            (if exworld     "t" "nil"))))
+
+(defun babel-preload-eval ()
+  "Form that pre-loads babel from ACL2's books quicklisp bundle.
+   Prevents defconstant-uneql when books later load their own babel."
+  (format nil "(let ((d (car (directory \"~A/books/quicklisp/bundle/software/babel-*/\")))) (when d (push d asdf:*central-registry*) (asdf:load-system \"babel\")))"
+          (or (uiop:getenv "ACL2_HOME") "/home/acl2")))
+
 (defmethod make-kernel-argv ((impl (eql :sbcl)) lisp-runtime core-path
                              quicklisp-setup)
-  (let* ((full-world  (equal (or (uiop:getenv "ACL2_JUPYTER_FULL_WORLD") "0") "1"))
-         (event-forms (equal (or (uiop:getenv "ACL2_JUPYTER_EVENT_FORMS") "0") "1"))
-         (deep-events (equal (or (uiop:getenv "ACL2_JUPYTER_DEEP_EVENTS") "0") "1"))
-         (exworld     (equal (or (uiop:getenv "ACL2_JUPYTER_EXWORLD") "0") "1"))
-         (start-form
-           (format nil "(acl2-jupyter-kernel:start \"~A\" :event-forms ~A :full-world ~A :deep-events ~A :exworld ~A)"
-                   "{connection_file}"
-                   (if event-forms "t" "nil")
-                   (if full-world  "t" "nil")
-                   (if deep-events "t" "nil")
-                   (if exworld     "t" "nil"))))
-    (list lisp-runtime
-          "--tls-limit" "16384"
-          "--dynamic-space-size" "32000"
-          "--control-stack-size" "64"
-          "--disable-ldb"
-          "--core" core-path
-          "--end-runtime-options"
-          "--no-userinit"
-          ;; Quicklisp setup.lisp loads ASDF, then we clear the stale
-          ;; source-registry cached in the saved ACL2 image so it
-          ;; picks up the current source-registry.conf.d at runtime.
-          "--load" quicklisp-setup
-          "--eval" "(asdf:clear-source-registry)"
-          ;; Pre-load babel from the ACL2 books' quicklisp bundle so the
-          ;; kernel and ACL2 books use the same version (prevents
-          ;; defconstant-uneql when books load babel via include-raw).
-          "--eval" (format nil "(let ((d (car (directory \"~A/books/quicklisp/bundle/software/babel-*/\")))) (when d (push d asdf:*central-registry*) (asdf:load-system \"babel\")))"
-                           (or (uiop:getenv "ACL2_HOME") "/home/acl2"))
-          "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
-          "--eval" start-form)))
+  (list lisp-runtime
+        "--tls-limit" "16384"
+        "--dynamic-space-size" "32000"
+        "--control-stack-size" "64"
+        "--disable-ldb"
+        "--core" core-path
+        "--end-runtime-options"
+        "--no-userinit"
+        ;; Quicklisp setup.lisp loads ASDF, then we clear the stale
+        ;; source-registry cached in the saved ACL2 image so it
+        ;; picks up the current source-registry.conf.d at runtime.
+        "--load" quicklisp-setup
+        "--eval" "(asdf:clear-source-registry)"
+        ;; Pre-load babel from the ACL2 books' quicklisp bundle so the
+        ;; kernel and ACL2 books use the same version (prevents
+        ;; defconstant-uneql when books load babel via include-raw).
+        "--eval" (babel-preload-eval)
+        "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
+        "--eval" (kernel-start-form)))
+
+(defmethod make-kernel-argv ((impl (eql :ccl)) lisp-runtime core-path
+                             quicklisp-setup)
+  ;; CCL is launched against the saved ACL2 heap image with -I.  Runtime
+  ;; options (stack size, terminal encoding) come from the saved_acl2
+  ;; script, minus its -I image and (acl2-default-restart) eval, which the
+  ;; kernel start function performs itself.
+  (append (list lisp-runtime
+                "-n"
+                "-I" core-path)
+          (ccl-runtime-args)
+          (list "--load" quicklisp-setup
+                "--eval" "(asdf:clear-source-registry)"
+                "--eval" (babel-preload-eval)
+                "--eval" "(ql:quickload :acl2-jupyter-kernel :silent t)"
+                "--eval" (kernel-start-form))))
 
 (defmethod jupyter:command-line ((instance acl2-installer))
   "Get the command line for an ACL2 kernel installation."
@@ -157,6 +247,19 @@
   (let ((sbcl-home (or (uiop:getenv "SBCL_HOME") "/usr/local/lib/sbcl/")))
     (list :object-plist
           "SBCL_HOME" sbcl-home)))
+
+(defmethod make-kernel-env ((impl (eql :ccl)))
+  (let* ((args (acl2-script-exec-line))
+         (exe (first args))
+         (ccl-home
+           (or (uiop:getenv "CCL_DEFAULT_DIRECTORY")
+               (and exe
+                    (namestring
+                     (uiop:pathname-directory-pathname
+                      (uiop:parse-native-namestring exe))))
+               "/usr/local/lib/ccl/")))
+    (list :object-plist
+          "CCL_DEFAULT_DIRECTORY" ccl-home)))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Kernel Spec Override
@@ -197,7 +300,7 @@
   (let ((instance (make-instance
                     (if system 'acl2-system-installer 'acl2-user-installer)
                     :display-name +display-name+
-                    :kernel-name +language+
+                    :kernel-name +kernel-name+
                     :lisp-runtime (or lisp-runtime (find-lisp-runtime))
                     :core-path (or core-path (find-acl2-core))
                     :quicklisp-setup (or quicklisp-setup (find-quicklisp-setup))
@@ -215,7 +318,7 @@
   (jupyter:install
     (make-instance 'acl2-user-image-installer
       :display-name +display-name+
-      :kernel-name +language+
+      :kernel-name +kernel-name+
       :prefix prefix
       :jupyter-path jupyter
       :program-path program)))

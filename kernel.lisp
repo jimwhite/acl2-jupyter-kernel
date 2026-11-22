@@ -346,9 +346,11 @@
    Signals an error for unrecognized keywords."
   (cond
     ((eq key :q)
-     ;; Exit immediately.  :abort t avoids deadlock with the Jupyter
-     ;; shell thread (which is blocked waiting on in-main-thread).
-     (sb-ext:exit :code 0 :abort t))
+     ;; Exit immediately.  On SBCL, :abort t avoids deadlock with the
+     ;; Jupyter shell thread (which is blocked waiting on in-main-thread).
+     #+sbcl (sb-ext:exit :code 0 :abort t)
+     #+ccl (ccl:quit 0)
+     #-(or sbcl ccl) (uiop:quit 0))
     (t
      (let* ((sym (intern (symbol-name key) "ACL2"))
             (len (keyword-command-arity sym state)))
@@ -640,7 +642,14 @@
    and extra-world metadata (dependencies, raw-defs)."
   (let* ((post-wrld (w *the-live-state*))
          (baseline  (world-baseline k))
-         (scan      (if baseline (ldiff post-wrld baseline) post-wrld))
+         ;; After an undo the post-world is older than the baseline, so it is
+         ;; not a tail of it and LDIF would return the whole (reduced) world.
+         ;; Compare command numbers: only diff when the world actually grew.
+         (post-cmd  (acl2::max-absolute-command-number post-wrld))
+         (base-cmd  (and baseline (acl2::max-absolute-command-number baseline)))
+         (scan      (cond ((null baseline) post-wrld)
+                          ((> post-cmd base-cmd) (ldiff post-wrld baseline))
+                          (t nil)))
          (tuples    (extract-event-tuples scan (deep-events-p k)))
          (events    (format-event-tuples tuples (deep-events-p k)))
          (forms     (when (event-forms-p k) (format-event-forms tuples))))
@@ -982,7 +991,10 @@
    EVENT-FORMS: when T, include original event forms in metadata.
    DEEP-EVENTS: when T, include embedded sub-events with full tuples.
    EXWORLD: when T, include extra-world metadata (symbols, deps, expansions)."
-  (acl2::acl2-default-restart)
+  ;; CALLED-BY-LP is T so that acl2-default-restart does not enter the ACL2
+  ;; read-eval-print loop.  On SBCL that entry normally lives in sbcl-restart,
+  ;; but on CCL acl2-default-restart itself calls (lp) unless this is set.
+  (acl2::acl2-default-restart t)
   ;; Fix: ironclad (loaded by common-lisp-jupyter) registers with package
   ;; nickname "CRYPTO", which conflicts with ACL2's kestrel/crypto/portcullis
   ;; defpkg.  Strip the nickname before ACL2 LP starts.

@@ -19,6 +19,10 @@ QUICKLISP_SETUP="${QUICKLISP_SETUP:-${HOME}/quicklisp/setup.lisp}"
 SAVED_ACL2="${ACL2:-${ACL2_HOME}/saved_acl2}"
 LOCAL_PROJECTS="${HOME}/quicklisp/local-projects"
 
+# Make the launcher discoverable while loading the kernel (the installer
+# reads its exec line to find the Lisp executable, image, and runtime flags).
+export ACL2="${SAVED_ACL2}"
+
 # Resolve the directory where this script lives (= where the .asd is)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -72,6 +76,8 @@ export ACL2_JUPYTER_EXWORLD="${ACL2_JUPYTER_EXWORLD:-0}"
 
 echo "=== Installing ACL2 Jupyter Kernelspec ==="
 echo "  saved_acl2: ${SAVED_ACL2}"
+echo "  kernel name: ${ACL2_JUPYTER_KERNEL_NAME:-acl2}"
+echo "  display name: ${ACL2_JUPYTER_DISPLAY_NAME:-ACL2}"
 echo "  event-forms: ${ACL2_JUPYTER_EVENT_FORMS}"
 echo "  full-world:  ${ACL2_JUPYTER_FULL_WORLD}"
 echo "  deep-events: ${ACL2_JUPYTER_DEEP_EVENTS}"
@@ -80,12 +86,15 @@ echo ""
 
 "${SAVED_ACL2}" <<EOF
 (value :q)
-(sb-ext:disable-debugger)
+#+sbcl (sb-ext:disable-debugger)
+#+ccl (setf ccl:*break-on-warnings* nil)
 (load "${QUICKLISP_SETUP}")
 (asdf:clear-source-registry)
 (ql:quickload :acl2-jupyter-kernel :silent t)
 (acl2-jupyter-kernel:install)
-(sb-ext:exit)
+#+sbcl (sb-ext:exit :code 0)
+#+ccl (ccl:quit 0)
+#-(or sbcl ccl) (uiop:quit 0)
 EOF
 
 echo ""
